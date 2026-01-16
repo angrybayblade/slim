@@ -1,5 +1,5 @@
 cc=gcc
-flags=-Wall -Werror -lX11 -lXtst
+flags=-lX11 -lXtst
 src=src
 test=test
 bin=bin
