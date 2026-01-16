@@ -55,6 +55,8 @@
 #define SK_F11 "F11"
 #define SK_F12 "F12"
 
+typedef enum { KEY_PHRASE, KEY_SPECIAL } KeyType;
+
 struct t_character {
   char key;
   KeySym keysym;
@@ -67,12 +69,21 @@ struct t_special_key {
 };
 
 struct t_character find_keycode_map(Display *display, char key);
+
+KeyType get_key_type(char *key);
+
 void press_key(Display *display, char *name);
+
 void release_key(Display *display, char *name);
+
 void send_key(Display *display, KeySym keysym);
+
 void send_character(Display *display, char key);
+
 void send_special_key(Display *display, char *name);
+
 void send_phrase(Display *display, char *phrase);
+
 void send_enter(Display *display);
 
 #endif // SLIM_KEYBOARD_H_

@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define STREQ(s0, s1) (strcmp(s0, s1) == 0)
+
 struct t_character characters[] = {
     // Uppercase Letters
     {'A', XK_A, 1},
@@ -115,6 +117,131 @@ struct t_character find_keycode_map(Display *display, char key) {
     }
   }
   return (struct t_character){0, 0, 0};
+}
+
+// don't judge
+KeyType get_key_type(char *key) {
+  if STREQ (key, SK_ENTER)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_BACKSPACE)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_TAB)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_ESC)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_CTRL_L)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_CTRL_R)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_ALT_L)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_ALT_R)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_SHIFT_L)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_SHIFT_R)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_CAPS_LOCK)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_NUM_LOCK)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_PRINT_SCREEN)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_SCROLL_LOCK)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_DELETE)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_INSERT)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_PAUSE)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_BREAK)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_SUPER_L)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_SUPER_R)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_HOME)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_END)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_PAGE_UP)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_PAGE_DOWN)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_UP)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_DOWN)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_LEFT)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_RIGHT)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F1)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F2)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F3)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F4)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F5)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F6)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F7)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F8)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F9)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F10)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F11)
+    return KEY_SPECIAL;
+
+  if STREQ (key, SK_F12)
+    return KEY_SPECIAL;
+
+  return KEY_PHRASE;
 }
 
 // Press a key

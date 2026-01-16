@@ -1,160 +1,38 @@
 // C library headers
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <poll.h>
-
-// Linux headers
-#include <errno.h>   // Error integer and strerror() function
-#include <fcntl.h>   // Contains file controls like O_RDWR
-#include <termios.h> // Contains POSIX terminal control definitions
-#include <unistd.h>  // write(), read(), close()
+#include <termios.h>
+#include <unistd.h>
 
 // Display headers
 #include <X11/Xlib.h>
 
-
-// Keyboard headers
+// Slim headers
 #include "./keyboard.h"
+#include "./serial.h"
 
-#define BUF_SIZE 2        // {INT}{NEWLINE}
-#define SLEEP_TIME 100000 // 100ms
-#define POLL_TIMEOUT 100  // 100ms
+#define CMD_START "S\n";
+#define CMD_CONFIG "C\n";
 
-const char *CMD_START = "S\n";
-const char *CMD_CONFIG = "C\n";
+#define SER_CMD_LEN 1
+#define SER_SIZE_HEADER_LEN 2
 
-// X11 helpers
-int open_serial_port(char *serial_port_name);
-int configure_serial_port(int serial_port);
+#define SER_F_LOG '0' // log message
+#define SER_F_STP '1' // setup requirement
+#define SER_F_BTN '2' // button press
 
-// Signal loop helpers
-int setup_loop(int serial_port);
-int signal_loop(int serial_port, char *phrases[], int n_phrases);
-void handle_button(int button, char *phrases[], int n_phrases);
+#define SLIM_DEBUG 1
+#define if_dbg if (SLIM_DEBUG)
 
-int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <serial_port_name>\n", argv[0]);
-    return EXIT_FAILURE;
-  }
+int serial_fd;
 
-  // Open the serial port
-  char *serial_port_name = argv[1];
-  int serial_port = open_serial_port(serial_port_name);
-  if (serial_port == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
-
-  // Configure the serial port
-  if (configure_serial_port(serial_port) == EXIT_FAILURE) {
-    return EXIT_FAILURE;
-  }
-
-  // Get the phrases
-  int n_phrases = argc - 2;
-  char *phrases[] = {};
-  for (int i = 2; i < argc; i++) {
-    phrases[i - 2] = argv[i];
-  }
-
-  // Start the signal loop
-  return signal_loop(serial_port, phrases, n_phrases);
-}
-
-/**
- * Signal loop
- * @param serial_port The serial port file descriptor
- * @return EXIT_SUCCESS if successful, EXIT_FAILURE otherwise
- */
-int signal_loop(int serial_port, char *phrases[], int n_phrases) {
-  // Set up the pollfd struct
-  int pret;
-  struct pollfd pfds[1] = {0};
-  pfds[0].fd = serial_port;
-  pfds[0].events = POLLIN;
-
-  // Read from the serial port
-  int n;              // The number of bytes read
-  char buf[BUF_SIZE]; // The buffer to store the data
-
-  // Read from the serial port until the program is terminated
-  while (1) {
-    pret = poll(pfds, 1, POLL_TIMEOUT);
-    if (pret < 0) {
-      printf("Error with poll = %s\n", strerror(errno));
-      return EXIT_FAILURE;
-    }
-
-    // If no data is available, sleep for a short time
-    if (pret == 0) {
-      usleep(SLEEP_TIME);
-      continue;
-    }
-
-    // Read the data from the serial port
-    n = read(serial_port, buf, BUF_SIZE);
-    if (n == -1) {
-      printf("Error with read = %s\n", strerror(errno));
-      continue;
-    }
-
-    if (buf[0] == '0') {
-      printf("[INFO] Setting up loop\n");
-      if (setup_loop(serial_port) == EXIT_FAILURE) {
-        printf("Error with setup_loop = %s\n", strerror(errno));
-        return EXIT_FAILURE;
-      }
-      printf("[INFO] Loop setup complete\n");
-      continue;
-    }
-
-    if (buf[0] != '\n' && buf[0] != ' ') {
-      handle_button(atoi(buf), phrases, n_phrases);
-    }
-  }
-  close(serial_port);
-  return EXIT_SUCCESS;
-}
-
-/**
- * Handle the button
- * @param button The button number
- */
-void handle_button(int button, char *phrases[], int n_phrases) {
-  Display *display = XOpenDisplay(NULL);
-  if (display == NULL) {
-    printf("Error with XOpenDisplay = %s\n", strerror(errno));
-    return;
-  }
-
-  if (button < 1 || button > n_phrases) {
-    printf("[ERROR] Invalid button number: %d\n", button);
-    XCloseDisplay(display);
-    return;
-  }
-
-  // Send the phrase
-  send_phrase(display, phrases[button - 1]);
-  send_enter(display);
-
-  // Close the display
-  XCloseDisplay(display);
-}
-
-/**
- * Setup the loop
- * @param serial_port The serial port file descriptor
- * @return EXIT_SUCCESS if successful, EXIT_FAILURE otherwise
- */
-int setup_loop(int serial_port) {
-  // Send the start command
-  if (write(serial_port, CMD_START, strlen(CMD_START)) == -1) {
-    printf("Error with write = %s\n", strerror(errno));
-    return EXIT_FAILURE;
-  }
-  return EXIT_SUCCESS;
+void util_handle_shutdown_signal(int sig) {
+  close(serial_fd);
+  return;
 }
 
 /**
@@ -162,12 +40,7 @@ int setup_loop(int serial_port) {
  * @return The serial port file descriptor
  */
 int open_serial_port(char *serial_port_name) {
-  int serial_port = open(serial_port_name, O_RDWR | O_NOCTTY | O_NDELAY);
-  if (serial_port < 0) {
-    printf("Error %i from open: %s\n", errno, strerror(errno));
-    return EXIT_FAILURE;
-  }
-  return serial_port;
+  return open(serial_port_name, O_RDWR | O_NOCTTY | O_NDELAY);
 }
 
 /**
@@ -213,10 +86,203 @@ int configure_serial_port(int serial_port) {
     return EXIT_FAILURE;
   }
 
+  // uncomment when not using poll
   // Set the serial port to non-blocking
-  if (fcntl(serial_port, F_SETFL, FNDELAY) == -1) {
-    printf("Error with fcntl = %s\n", strerror(errno));
+  // if (fcntl(serial_port, F_SETFL, FNDELAY) == -1) {
+  //   printf("Error with fcntl = %s\n", strerror(errno));
+  //   return EXIT_FAILURE;
+  // }
+  return EXIT_SUCCESS;
+}
+
+/**
+ * Handle the button
+ * @param button The button number
+ */
+void handle_button(int button, macro_sequence_t *macros, int n_macros) {
+  if (button < 0 || button >= n_macros) {
+    printf("[err] Invalid button number: %d\n", button);
+    return;
+  }
+
+  Display *display = XOpenDisplay(NULL);
+  if (display == NULL) {
+    printf("[err] XOpenDisplay = %s\n", strerror(errno));
+    return;
+  }
+
+  int n_partial = 0;
+  char **partial = malloc(sizeof(char *));
+
+  macro_sequence_t *macro_seq = &macros[button];
+  if_dbg printf("[dbg] %s\n", macro_seq->str);
+  for (int i = 0; i < macro_seq->size; i++) {
+    macro_t *macro = &macros[button].sequence[i];
+    if (macro->type == KEY_PHRASE) {
+      send_phrase(display, macro->value);
+      continue;
+    }
+
+    if (!macro->partial) {
+      send_special_key(display, macro->value);
+      continue;
+    }
+
+    int idx = n_partial++;
+    partial = realloc(partial, n_partial * sizeof(char *));
+    partial[idx] = macro->value;
+
+    // partially send key
+    press_key(display, macro->value);
+  }
+
+  for (int i = n_partial; i > 0; i--) {
+    release_key(display, partial[i - 1]);
+  }
+  XCloseDisplay(display);
+}
+
+/**
+ * Signal loop
+ * @param serial_port The serial port file descriptor
+ * @return EXIT_SUCCESS if successful, EXIT_FAILURE otherwise
+ */
+int serial_loop(int serial_fd, macro_sequence_t *macros, int n_macros) {
+  int poll_ret;
+  int msg_size;
+  int byt_size; // The number of bytes read
+
+  char h_cmd[SER_CMD_LEN];          // The buffer to store the data
+  char h_size[SER_SIZE_HEADER_LEN]; // The buffer to store the size header
+
+  // Set up the pollfd struct
+  struct pollfd pfds[1] = {0};
+
+  // Set up the pollfd struct
+  pfds[0].fd = serial_fd;
+  pfds[0].events = POLLIN;
+
+  // Read from the serial port until the program is terminated
+  while (1) {
+    poll_ret = poll(pfds, 1, POLL_TIMEOUT);
+    if (poll_ret < 0) {
+      printf("error polling: %s\n", strerror(errno));
+      return EXIT_FAILURE;
+    }
+
+    // If no data is available, sleep for a short time
+    if (poll_ret == 0)
+      continue;
+
+    // Read the data from the serial port
+    byt_size = read(serial_fd, h_cmd, SER_CMD_LEN); // Read the first character
+    if (byt_size == -1)
+      continue;
+
+    byt_size =
+        read(serial_fd, h_size, SER_SIZE_HEADER_LEN); // Read the size header
+    if (byt_size == -1)
+      continue;
+
+    msg_size = atoi(h_size);
+    if (msg_size == 0)
+      continue;
+
+    char *line = malloc(msg_size * sizeof(char));
+    byt_size = read(serial_fd, line, msg_size + 1); // Read the line
+    if (byt_size == -1)
+      continue;
+    line[msg_size] = '\0';
+
+    // printf("cmd: %c size: %d line: %s\n", h_cmd[0], msg_size, line);
+
+    switch (h_cmd[0]) {
+    case SER_F_LOG:
+      printf("[log] %s\n", line);
+      break;
+    case SER_F_STP:
+      printf("[stp] %s\n", line);
+      break;
+    case SER_F_BTN:
+      printf("[btn] %s\n", line);
+      handle_button(atoi(line), macros, n_macros);
+      break;
+    default:
+      printf("[err] unknown command: %s\n", h_cmd);
+      break;
+    }
+  }
+
+  close(serial_fd);
+  return EXIT_SUCCESS;
+}
+
+macro_sequence_t *parse_macro(char *macro_str) {
+  macro_sequence_t *macro = malloc(sizeof(macro_sequence_t));
+  macro->sequence = malloc(sizeof(macro_sequence_t *));
+  macro->str = macro_str;
+
+  int iter = 0;
+  int count = 0;
+  int s_start = 0;
+  int s_size = 0;
+  char c;
+
+  while ((c = *(macro_str++)) && ++iter) {
+    if ((c != '|' || *macro_str != '>') && *macro_str)
+      continue;
+
+    int idx = count++;
+    macro->sequence =
+        realloc(macro->sequence, count * sizeof(macro_sequence_t));
+
+    s_size = iter - s_start;
+    s_start = iter + 1;
+    if (*(macro_str - s_size) == '^') {
+      s_size--;
+      macro->sequence[idx].partial = 1;
+    }
+
+    macro->sequence[idx].value = calloc(s_size, sizeof(char));
+    memcpy(macro->sequence[idx].value, macro_str - s_size,
+           *macro_str ? s_size - 1 : s_size);
+    macro->sequence[idx].type = get_key_type(macro->sequence[idx].value);
+  }
+
+  macro->size = count;
+  return macro;
+}
+
+macro_sequence_t *parse_macros(int argc, char *argv[]) {
+  int n_macros = argc - 2;
+  macro_sequence_t *macros = calloc(n_macros, sizeof(macro_sequence_t *));
+  for (int i = 0; i < n_macros; i++)
+    macros[i] = *parse_macro(argv[i + 2]);
+  return macros;
+}
+
+int main(int argc, char *argv[]) {
+  if (argc < 3) {
+    fprintf(stderr, "Usage: %s <serial_port_name> ...<cmd>\n", argv[0]);
     return EXIT_FAILURE;
   }
-  return EXIT_SUCCESS;
+
+  // Open the serial port
+  serial_fd = open_serial_port(argv[1]);
+  if (serial_fd == EXIT_FAILURE) {
+    fprintf(stderr, "error: opening device %s\n", argv[1]);
+    return EXIT_FAILURE;
+  }
+
+  // Configure the serial port
+  if (configure_serial_port(serial_fd) == EXIT_FAILURE) {
+    fprintf(stderr, "error: configuring device %s\n", argv[1]);
+    return EXIT_FAILURE;
+  }
+
+  // parse macros
+  macro_sequence_t *macros = parse_macros(argc, argv);
+
+  // Start the signal loop
+  return serial_loop(serial_fd, macros, argc - 2);
 }
