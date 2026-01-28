@@ -25,7 +25,10 @@
 #define SER_F_STP '1' // setup requirement
 #define SER_F_BTN '2' // button press
 
-#define SLIM_DEBUG 1
+#ifndef SLIM_DEBUG
+#define SLIM_DEBUG 0
+#endif
+
 #define if_dbg if (SLIM_DEBUG)
 
 int serial_fd;
@@ -101,13 +104,13 @@ int configure_serial_port(int serial_port) {
  */
 void handle_button(int button, macro_sequence_t *macros, int n_macros) {
   if (button < 0 || button >= n_macros) {
-    printf("[err] Invalid button number: %d\n", button);
+    fprintf(stderr, "[err] Invalid button number: %d\n", button);
     return;
   }
 
   Display *display = XOpenDisplay(NULL);
   if (display == NULL) {
-    printf("[err] XOpenDisplay = %s\n", strerror(errno));
+    fprintf(stderr, "[err] XOpenDisplay = %s\n", strerror(errno));
     return;
   }
 
@@ -136,9 +139,8 @@ void handle_button(int button, macro_sequence_t *macros, int n_macros) {
     press_key(display, macro->value);
   }
 
-  for (int i = n_partial; i > 0; i--) {
+  for (int i = n_partial; i > 0; i--)
     release_key(display, partial[i - 1]);
-  }
   XCloseDisplay(display);
 }
 
@@ -148,6 +150,7 @@ void handle_button(int button, macro_sequence_t *macros, int n_macros) {
  * @return EXIT_SUCCESS if successful, EXIT_FAILURE otherwise
  */
 int serial_loop(int serial_fd, macro_sequence_t *macros, int n_macros) {
+  int setup_complete = 0;
   int poll_ret;
   int msg_size;
   int byt_size; // The number of bytes read
@@ -192,9 +195,16 @@ int serial_loop(int serial_fd, macro_sequence_t *macros, int n_macros) {
     byt_size = read(serial_fd, line, msg_size + 1); // Read the line
     if (byt_size == -1)
       continue;
-    line[msg_size] = '\0';
 
-    // printf("cmd: %c size: %d line: %s\n", h_cmd[0], msg_size, line);
+    line[msg_size] = '\0';
+    if (!setup_complete) {
+      if (strcmp(line, "finished setup") != 0)
+        continue;
+      setup_complete = 1;
+    }
+
+    if_dbg printf("[dbg] cmd: %c size: %d line: %s\n", h_cmd[0], msg_size,
+                  line);
 
     switch (h_cmd[0]) {
     case SER_F_LOG:
@@ -208,7 +218,7 @@ int serial_loop(int serial_fd, macro_sequence_t *macros, int n_macros) {
       handle_button(atoi(line), macros, n_macros);
       break;
     default:
-      printf("[err] unknown command: %s\n", h_cmd);
+      fprintf(stderr, "[err] unknown command: %s\n", h_cmd);
       break;
     }
   }

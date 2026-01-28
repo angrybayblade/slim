@@ -3,6 +3,7 @@ flags=-lX11 -lXtst
 src=src
 test=test
 bin=bin
+debug=0
 
 all: clean setup $(bin)/serial
 
@@ -14,7 +15,7 @@ setup:
 
 
 $(bin)/serial: $(src)/serial.c $(src)/keyboard.c
-	gcc -o $@ $^ $(flags)
+	gcc -DSLIM_DEBUG=$(debug) -o $@ $^ $(flags)
 
 tests: clean setup $(bin)/echo $(bin)/press $(bin)/sequence $(bin)/combination
 
